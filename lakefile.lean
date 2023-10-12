@@ -8,7 +8,7 @@ package ffi {
 
 lean_lib FFI
 
-@[default_target] lean_exe test {
+@[default_target] lean_exe run {
   root := `Main
 }
 

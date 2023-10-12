@@ -1,4 +1,4 @@
 import FFI
 
 def main : IO Unit :=
-  IO.println <| myAdd 1 2
+  IO.println s!"2 + 3 = {myAdd 2 3}"
