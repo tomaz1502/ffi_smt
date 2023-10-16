@@ -1,28 +1,39 @@
 #include <lean/lean.h>
+#include <string.h>
 
-extern "C" uint32_t my_add(uint32_t a, uint32_t b) {
-    return a + b;
+extern "C" lean_obj_res mk_tac(lean_object* str)
+{
+  return str;
 }
 
-extern "C" lean_obj_res my_lean_fun() {
-    return lean_io_result_mk_ok(lean_box(0));
+extern "C" lean_obj_res mk_step_tac(lean_object* name, lean_object* type, lean_object* tac)
+{
+  lean_obj_res obj =  lean_alloc_ctor(0, 3, 0);
+  lean_ctor_set(obj, 0, name);
+  lean_ctor_set(obj, 1, type);
+  lean_ctor_set(obj, 2, tac);
+  return obj;
 }
 
-extern "C" lean_obj_res my_foo(uint8_t ctor) {
-  switch (ctor) {
-    case 0: return lean_mk_string("foo"); break;
-    case 1: return lean_mk_string("bar"); break;
-    case 2: return lean_mk_string("baz"); break;
-  }
-  return lean_mk_string("bam");
+extern "C" lean_obj_res mk_step_thm(lean_object* name, lean_object* type, lean_object* args)
+{
+  lean_obj_res obj = lean_alloc_ctor(1, 3, 1);
+  lean_ctor_set(obj, 0, name);
+  lean_ctor_set(obj, 1, type);
+  lean_ctor_set(obj, 2, args);
+  return obj;
 }
 
-extern "C" uint8_t my_bar(lean_obj_arg s) {
-  if (lean_string_dec_eq(s, lean_mk_string("T.A")))
-    return 0;
-  if (lean_string_dec_eq(s, lean_mk_string("T.B")))
-    return 1;
-  if (lean_string_dec_eq(s, lean_mk_string("T.C")))
-    return 2;
-  return 0;
+extern "C" lean_obj_res mk_step_scope(lean_object* name, lean_object* type, lean_object* steps)
+{
+  lean_obj_res obj = lean_alloc_ctor(2, 3, 2);
+  lean_ctor_set(obj, 0, name);
+  lean_ctor_set(obj, 1, type);
+  lean_ctor_set(obj, 2, steps);
+  return obj;
+}
+
+extern "C" lean_obj_res mk_cvc5_proof(lean_object* steps)
+{
+  return steps;
 }
