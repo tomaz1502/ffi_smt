@@ -1,2 +1,1 @@
-import FFI.Cvc5Proof
-
+import FFI.Solver
