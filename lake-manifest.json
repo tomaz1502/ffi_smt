@@ -1,1 +1,5 @@
-{"version": 6, "packagesDir": "lake-packages", "packages": [], "name": "ffi"}
+{"version": 7,
+ "packagesDir": ".lake/packages",
+ "packages": [],
+ "name": "ffi",
+ "lakeDir": ".lake"}

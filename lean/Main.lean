@@ -1,25 +1,31 @@
 import FFI
 
 def main : IO Unit := do
-  let tac := mkTac "tac"
-  IO.println s!"{tac.stx}"
+  let p := solveAndGetProof "(set-logic UF)\n(assert false)\n(check-sat)"
+  IO.println (repr p)
 
-  let step1 := mkStepTac `nm "type" tac
-  match step1 with
-  | .tac _ type _ => IO.println s!"{type}"
-  | _ => IO.println "missing"
+-- #eval Solver.getVersion (Solver.new ())
 
-  let step2 := mkStepThm `nm2 "type2" []
-  match step2 with
-  | .thm nm _ _ => IO.println s!"{nm}"
-  | _ => IO.println "missing 2"
+#eval solveAndGetProof "
+(set-logic UF)
+(assert false)
+"
 
-  let step3 := mkStepScope `nm3 "type3" []
-  match step3 with
-  | .scope nm _ _ => IO.println s!"{nm}"
-  | _ => IO.println "missing 3"
-
-  let cvc5Proof := mkCvc5Proof [step1, step2, step3]
-  match cvc5Proof with
-  | [_, _, _] => IO.println "cvc5Proof ok"
-  | _ => IO.println s!"missing 4"
+#eval solveAndGetProof "
+(set-logic UF)
+(declare-sort U 0)
+(declare-const a U)
+(declare-const b U)
+(declare-const c U)
+(declare-const d U)
+(declare-fun f (U U) U)
+(declare-const p1 Bool)
+(declare-const p2 Bool)
+(declare-const p3 Bool)
+(assert (= a b))
+(assert (= c d))
+(assert (and p1 true))
+(assert (or (not p1) (and p2 p3)))
+(assert (or (not p3) (distinct (f a c) (f b d))))
+(check-sat)
+"
