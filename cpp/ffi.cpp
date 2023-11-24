@@ -168,18 +168,10 @@ lean_obj_res mk_tac_cong(lean_obj_arg as)
   return obj;
 }
 
-lean_obj_res mk_step_intro(const char* name)
-{
-  lean_object* lname = mk_name_string(name);
-  lean_obj_res obj = lean_alloc_ctor(0, 1, 0);
-  lean_ctor_set(obj, 0, lname);
-  return obj;
-}
-
 lean_obj_res mk_step_thm(const char* name, lean_obj_arg type, lean_obj_arg val)
 {
   lean_object* lname = mk_name_string(name);
-  lean_obj_res obj = lean_alloc_ctor(1, 3, 0);
+  lean_obj_res obj = lean_alloc_ctor(0, 3, 0);
   lean_ctor_set(obj, 0, lname);
   lean_ctor_set(obj, 1, type);
   lean_ctor_set(obj, 2, val);
@@ -189,7 +181,7 @@ lean_obj_res mk_step_thm(const char* name, lean_obj_arg type, lean_obj_arg val)
 lean_obj_res mk_step_tac(const char* name, lean_obj_arg type, lean_obj_arg tac)
 {
   lean_object* lname = mk_name_string(name);
-  lean_obj_res obj = lean_alloc_ctor(2, 3, 0);
+  lean_obj_res obj = lean_alloc_ctor(1, 3, 0);
   lean_ctor_set(obj, 0, lname);
   lean_ctor_set(obj, 1, type);
   lean_ctor_set(obj, 2, tac);
@@ -198,23 +190,25 @@ lean_obj_res mk_step_tac(const char* name, lean_obj_arg type, lean_obj_arg tac)
 
 lean_obj_res mk_step_scope(const char* name,
                            lean_obj_arg type,
+                           lean_obj_arg assums,
                            lean_obj_arg steps,
                            const char* main)
 {
   lean_object* lname = mk_name_string(name);
   lean_object* lmain = mk_name_string(main);
-  lean_obj_res obj = lean_alloc_ctor(3, 4, 0);
+  lean_obj_res obj = lean_alloc_ctor(2, 5, 0);
   lean_ctor_set(obj, 0, lname);
   lean_ctor_set(obj, 1, type);
-  lean_ctor_set(obj, 2, steps);
-  lean_ctor_set(obj, 3, lmain);
+  lean_ctor_set(obj, 2, assums);
+  lean_ctor_set(obj, 3, steps);
+  lean_ctor_set(obj, 4, lmain);
   return obj;
 }
 
 lean_obj_res mk_step_trust(const char* name, lean_obj_arg type)
 {
   lean_object* lname = mk_name_string(name);
-  lean_obj_res obj = lean_alloc_ctor(4, 2, 0);
+  lean_obj_res obj = lean_alloc_ctor(3, 2, 0);
   lean_ctor_set(obj, 0, lname);
   lean_ctor_set(obj, 1, type);
   return obj;
@@ -494,10 +488,10 @@ void process_rewrite(Solver& slv,
 }
 
 void process_step(Solver& slv,
-                    const cvc5::Proof& p,
-                    std::unordered_map<Term, std::string>& tMap,
-                    std::unordered_map<Proof, std::string>& pMap,
-                    lean_obj_arg& steps)
+                  const cvc5::Proof& p,
+                  std::unordered_map<Term, std::string>& tMap,
+                  std::unordered_map<Proof, std::string>& pMap,
+                  lean_obj_arg& steps)
 {
   if (pMap.find(p) != pMap.cend())
   {
@@ -511,18 +505,20 @@ void process_step(Solver& slv,
       ctMap.insert(tMap.cbegin(), tMap.cend());
       std::unordered_map<Proof, std::string> cpMap;
       cpMap.insert(pMap.cbegin(), pMap.cend());
+      lean_object* cAssums = lean_mk_empty_array();
       lean_object* cSteps = lean_mk_empty_array();
       std::vector<cvc5::Term> args = p.getArguments();
       for (const cvc5::Term& arg : args)
       {
         ctMap[arg] = "a" + std::to_string(ctMap.size() + cpMap.size());
-        cSteps = lean_array_push(cSteps, mk_step_intro(ctMap[arg].c_str()));
+        cAssums = lean_array_push(cAssums, mk_name_string(ctMap[arg].c_str()));
       }
       process_step(slv, p.getChildren()[0], ctMap, cpMap, cSteps);
       pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
       steps = lean_array_push(steps,
                               mk_step_scope(pMap[p].c_str(),
                                             process_term(p.getResult()),
+                                            cAssums,
                                             cSteps,
                                             cpMap[p.getChildren()[0]].c_str()));
       break;

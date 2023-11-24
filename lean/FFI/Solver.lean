@@ -14,14 +14,12 @@ inductive Tac where
 deriving Repr
 
 inductive Step where
-  -- intro $name
-  | intro (name : Name) : Step
   -- have $name : $type := $val
   | thm (name : Name) (type : Expr) (val : Expr) : Step
   -- have $name : $type := by $tac
   | tac (name : Name) (type : Expr) (tac : Tac) : Step
   -- have $name : ¬ $paramType ∨ $retType := scope (fun $scopedName => ...)
-  | scope (name : Name) (type : Expr) (steps : Array Step) (main : Name) : Step
+  | scope (name : Name) (type : Expr) (assums : Array Name) (steps : Array Step) (main : Name) : Step
   -- have $name : $type := sorry
   | trust (name : Name) (type : Expr) : Step
 deriving Inhabited, Repr
