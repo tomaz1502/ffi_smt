@@ -7,9 +7,12 @@ instance : Repr Expr := ⟨fun e _ => f!"({e})"⟩
 inductive Tac where
   | eval : Tac -- rfl or decide
   | rewrite : Expr → Expr → Expr → Array (Array Expr) → Tac
-  | andElim : Name → Nat → Tac
   | r0 : Name → Name → Expr → Option Nat → Option Nat → Tac
   | r1 : Name → Name → Expr → Option Nat → Option Nat → Tac
+  | factor : Name → Option Nat → Tac
+  | reordering : Name → Array Nat → Option Nat → Tac
+  | andElim : Name → Nat → Tac
+  | notOrElim : Name → Nat → Tac
   | cong : Array Name → Tac
 deriving Repr
 
@@ -27,5 +30,13 @@ deriving Inhabited, Repr
 -- an array containing a single scope for now...
 abbrev Proof := Array Step
 
-@[extern "solve_and_get_proof"]
-opaque solveAndGetProof (query : String) : Proof
+abbrev Model := String
+
+inductive Result where
+  | sat : Model → Result
+  | unsat : Proof → Result
+  | unknown : Result
+deriving Inhabited, Repr
+
+@[extern "solve"]
+opaque Solver.solve (query : String) : Result

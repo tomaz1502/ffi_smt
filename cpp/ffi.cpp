@@ -97,10 +97,10 @@ lean_obj_res mk_expr_forallE(lean_obj_arg name,
   return obj;
 }
 
-lean_obj_res mk_expr_app_n(lean_obj_arg f,
+lean_obj_res mk_expr_app_n(lean_obj_arg fn,
                            const std::vector<lean_obj_arg>& args)
 {
-  lean_object* e = f;
+  lean_object* e = fn;
   for (const lean_obj_arg& arg : args)
   {
     e = mk_expr_app(e, arg);
@@ -123,21 +123,13 @@ lean_obj_res mk_tac_rewrite(lean_obj_arg assoc,
   return obj;
 }
 
-lean_obj_res mk_tac_andElim(lean_obj_arg a, lean_obj_arg i)
-{
-  lean_obj_res obj = lean_alloc_ctor(2, 2, 0);
-  lean_ctor_set(obj, 0, a);
-  lean_ctor_set(obj, 1, i);
-  return obj;
-}
-
 lean_obj_res mk_tac_r0(lean_obj_arg h1,
                        lean_obj_arg h2,
                        lean_obj_arg pivot,
                        lean_obj_arg i1,
                        lean_obj_arg i2)
 {
-  lean_obj_res obj = lean_alloc_ctor(3, 5, 0);
+  lean_obj_res obj = lean_alloc_ctor(2, 5, 0);
   lean_ctor_set(obj, 0, h1);
   lean_ctor_set(obj, 1, h2);
   lean_ctor_set(obj, 2, pivot);
@@ -152,7 +144,7 @@ lean_obj_res mk_tac_r1(lean_obj_arg h1,
                        lean_obj_arg i1,
                        lean_obj_arg i2)
 {
-  lean_obj_res obj = lean_alloc_ctor(4, 5, 0);
+  lean_obj_res obj = lean_alloc_ctor(3, 5, 0);
   lean_ctor_set(obj, 0, h1);
   lean_ctor_set(obj, 1, h2);
   lean_ctor_set(obj, 2, pivot);
@@ -161,9 +153,44 @@ lean_obj_res mk_tac_r1(lean_obj_arg h1,
   return obj;
 }
 
+lean_obj_res mk_tac_factor(lean_obj_arg assum, lean_obj_arg suffixIdx)
+{
+  lean_obj_res obj = lean_alloc_ctor(4, 2, 0);
+  lean_ctor_set(obj, 0, assum);
+  lean_ctor_set(obj, 1, suffixIdx);
+  return obj;
+}
+
+lean_obj_res mk_tac_reorder(lean_obj_arg assum,
+                            lean_obj_arg pos,
+                            lean_obj_arg suffixIdx)
+{
+  lean_obj_res obj = lean_alloc_ctor(5, 3, 0);
+  lean_ctor_set(obj, 0, assum);
+  lean_ctor_set(obj, 1, pos);
+  lean_ctor_set(obj, 2, suffixIdx);
+  return obj;
+}
+
+lean_obj_res mk_tac_andElim(lean_obj_arg a, lean_obj_arg i)
+{
+  lean_obj_res obj = lean_alloc_ctor(6, 2, 0);
+  lean_ctor_set(obj, 0, a);
+  lean_ctor_set(obj, 1, i);
+  return obj;
+}
+
+lean_obj_res mk_tac_notOrElim(lean_obj_arg a, lean_obj_arg i)
+{
+  lean_obj_res obj = lean_alloc_ctor(7, 2, 0);
+  lean_ctor_set(obj, 0, a);
+  lean_ctor_set(obj, 1, i);
+  return obj;
+}
+
 lean_obj_res mk_tac_cong(lean_obj_arg as)
 {
-  lean_obj_res obj = lean_alloc_ctor(5, 1, 0);
+  lean_obj_res obj = lean_alloc_ctor(8, 1, 0);
   lean_ctor_set(obj, 0, as);
   return obj;
 }
@@ -216,7 +243,24 @@ lean_obj_res mk_step_trust(const char* name, lean_obj_arg type)
 
 lean_obj_res mk_proof(lean_obj_arg steps) { return steps; }
 
+lean_obj_res mk_result_sat(lean_obj_arg model)
+{
+  lean_obj_res obj = lean_alloc_ctor(0, 1, 0);
+  lean_ctor_set(obj, 0, model);
+  return obj;
+}
+
+lean_obj_res mk_result_unsat(lean_obj_arg proof)
+{
+  lean_obj_res obj = lean_alloc_ctor(1, 1, 0);
+  lean_ctor_set(obj, 0, proof);
+  return obj;
+}
+
+lean_obj_res mk_result_unknown() { return lean_box(2); }
+
 lean_obj_res process_term(const Term& t);
+lean_obj_res compute_decidable_inst(const Term& t);
 
 lean_obj_res left_assoc_op(lean_obj_arg op,
                            cvc5::Term::const_iterator begin,
@@ -232,18 +276,139 @@ lean_obj_res left_assoc_op(lean_obj_arg op,
   return curr;
 }
 
-lean_obj_res left_assoc_op_proof(lean_obj_arg op,
-                                 cvc5::Term::const_iterator begin,
-                                 cvc5::Term::const_iterator end)
+lean_obj_res compute_decidable_inst(const Term& t)
 {
-  lean_object* curr = process_term(*begin);
-  auto it = ++begin;
-  while (it != end)
+  switch (t.getKind())
   {
-    curr = mk_expr_app(mk_expr_app(op, curr), process_term(*it));
-    ++it;
+    case Kind::CONST_BOOLEAN:
+    {
+      return mk_expr_const(
+          mk_name_string(t.getBooleanValue() ? "instDecidableTrue"
+                                             : "instDecidableFalse"),
+          mk_list_nil());
+    }
+    case Kind::NOT:
+    {
+      return mk_expr_app(mk_expr_const(mk_name_string("Not"), mk_list_nil()),
+                         process_term(t[0]));
+    }
+    case Kind::IMPLIES:
+    {
+      size_t n = t.getNumChildren();
+      lean_object* op =
+          mk_expr_const(mk_name_string("instDecidableForAll"), mk_list_nil());
+      lean_inc_n(op, n - 1);
+      lean_object* res = mk_expr_app_n(op,
+                                       {process_term(t[n - 2]),
+                                        process_term(t[n - 1]),
+                                        compute_decidable_inst(t[n - 2]),
+                                        compute_decidable_inst(t[n - 1])});
+      Term resType = t[n - 2].impTerm(t[n - 1]);
+      for (size_t i = 2; i < n; ++i)
+      {
+        res = mk_expr_app_n(op,
+                            {process_term(t[n - i - 1]),
+                             process_term(resType),
+                             compute_decidable_inst(t[n - i - 1]),
+                             res});
+        resType = t[n - i - 1].impTerm(resType);
+      }
+      return res;
+    }
+    case Kind::AND:
+    {
+      lean_object* op =
+          mk_expr_const(mk_name_string("instDecidableAnd"), mk_list_nil());
+      lean_inc_n(op, t.getNumChildren() - 1);
+      lean_object* res = mk_expr_app_n(op,
+                                       {process_term(t[0]),
+                                        process_term(t[1]),
+                                        compute_decidable_inst(t[0]),
+                                        compute_decidable_inst(t[1])});
+      Term resType = t[0].andTerm(t[1]);
+      for (size_t i = 2; i < t.getNumChildren(); ++i)
+      {
+        res = mk_expr_app_n(op,
+                            {process_term(resType),
+                             process_term(t[i]),
+                             res,
+                             compute_decidable_inst(t[i])});
+        resType = resType.andTerm(t[i]);
+      }
+      return res;
+    }
+    case Kind::OR:
+    {
+      lean_object* op =
+          mk_expr_const(mk_name_string("instDecidableOr"), mk_list_nil());
+      lean_inc_n(op, t.getNumChildren() - 1);
+      lean_object* res = mk_expr_app_n(op,
+                                       {process_term(t[0]),
+                                        process_term(t[1]),
+                                        compute_decidable_inst(t[0]),
+                                        compute_decidable_inst(t[1])});
+      Term resType = t[0].andTerm(t[1]);
+      for (size_t i = 2; i < t.getNumChildren(); ++i)
+      {
+        res = mk_expr_app_n(op,
+                            {process_term(resType),
+                             process_term(t[i]),
+                             res,
+                             compute_decidable_inst(t[i])});
+        resType = resType.andTerm(t[i]);
+      }
+      return res;
+    }
+    case Kind::EQUAL:
+    {
+      switch (t[0].getSort().getKind())
+      {
+        case SortKind::BOOLEAN_SORT:
+        {
+          lean_object* eq = mk_expr_const(mk_name_string("instDecidableEqProp"),
+                                          mk_list_nil());
+          lean_object* iff =
+              mk_expr_const(mk_name_string("instDecidableIff"), mk_list_nil());
+          return mk_expr_app_n(eq,
+                               {process_term(t[0]),
+                                process_term(t[1]),
+                                mk_expr_app_n(iff,
+                                              {process_term(t[0]),
+                                               process_term(t[1]),
+                                               compute_decidable_inst(t[0]),
+                                               compute_decidable_inst(t[1])})});
+        }
+        case SortKind::INTEGER_SORT:
+        {
+          lean_object* eq = mk_expr_const(
+              mk_name_str(mk_name_string("Int"), "instDecidableEqInt"),
+              mk_list_nil());
+          return mk_expr_app(mk_expr_app(eq, process_term(t[0])),
+                             process_term(t[1]));
+        }
+        case SortKind::REAL_SORT:
+        {
+          lean_object* eq = mk_expr_const(mk_name_string("instDecidableEqRat"),
+                                          mk_list_nil());
+          return mk_expr_app(mk_expr_app(eq, process_term(t[0])),
+                             process_term(t[1]));
+        }
+        default:
+        {
+          return mk_expr_const(mk_name_string("sorry"), mk_list_nil());
+        }
+      }
+    }
+    case Kind::DISTINCT:
+    {
+      return compute_decidable_inst(t[0].eqTerm(t[1]).notTerm());
+    }
+    default:
+    {
+      std::cout << t.getKind() << ": " << t << std::endl;
+      return mk_expr_const(mk_name_string("sorry"), mk_list_nil());
+    }
   }
-  return curr;
 }
 
 lean_obj_res process_sort(const Sort& s)
@@ -293,6 +458,18 @@ lean_obj_res process_term(const Term& t)
       return mk_expr_app(mk_expr_const(mk_name_string("Not"), mk_list_nil()),
                          process_term(t[0]));
     }
+    case Kind::IMPLIES:
+    {
+      lean_object* curr = process_term(t[t.getNumChildren() - 1]);
+      for (size_t i = 1, n = t.getNumChildren(); i < n; ++i)
+      {
+        curr = mk_expr_forallE(mk_name_anonymous(),
+                               process_term(t[n - i - 1]),
+                               curr,
+                               mk_binderInfo_default());
+      }
+      return curr;
+    }
     case Kind::AND:
     {
       lean_object* op = mk_expr_const(mk_name_string("And"), mk_list_nil());
@@ -304,18 +481,6 @@ lean_obj_res process_term(const Term& t)
       lean_object* op = mk_expr_const(mk_name_string("Or"), mk_list_nil());
       lean_inc_n(op, t.getNumChildren() - 1);
       return left_assoc_op(op, t.begin(), t.end());
-    }
-    case Kind::IMPLIES:
-    {
-      lean_object* curr = process_term(*t.end());
-      for (size_t i = t.getNumChildren() - 2; i >= 0; --i)
-      {
-        curr = mk_expr_forallE(mk_name_anonymous(),
-                               process_term(t[i]),
-                               curr,
-                               mk_binderInfo_default());
-      }
-      return curr;
     }
     case Kind::EQUAL:
     {
@@ -336,6 +501,16 @@ lean_obj_res process_term(const Term& t)
                                   process_sort(t[0].getSort())),
                       process_term(t[0])),
           process_term(t[1]));
+    }
+    case Kind::ITE:
+    {
+      lean_object* levels = mk_list_cons(mk_level_one(), mk_list_nil());
+      return mk_expr_app_n(mk_expr_const(mk_name_string("itee"), levels),
+                           {process_sort(t[1].getSort()),
+                            process_term(t[0]),
+                            compute_decidable_inst(t[0]),
+                            process_term(t[1]),
+                            process_term(t[2])});
     }
     case Kind::APPLY_UF:
     {
@@ -421,6 +596,69 @@ void process_rewrite(Solver& slv,
           mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
       break;
     }
+    case 39U:
+    {
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_const(mk_name_string("bool_impl_false"), mk_list_nil()),
+          process_term(p.getArguments()[1]));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case 46U:
+    {
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* assoc =
+          mk_expr_const(mk_name_string("or_assoc_eq"), mk_list_nil());
+      lean_object* null =
+          mk_expr_const(mk_name_string("or_true"), mk_list_nil());
+      lean_object* rule =
+          mk_expr_const(mk_name_string("bool_or_true"), mk_list_nil());
+      lean_object* args = lean_mk_empty_array();
+      const std::vector<Term> pargs = p.getArguments();
+      for (size_t i = 1; i < pargs.size(); ++i)
+      {
+        lean_object* arg = lean_mk_empty_array();
+        for (const Term& t : pargs[i])
+        {
+          arg = lean_array_push(arg, process_term(t));
+        }
+        args = lean_array_push(args, arg);
+      }
+      lean_object* tac = mk_tac_rewrite(assoc, null, rule, args);
+      steps = lean_array_push(
+          steps,
+          mk_step_tac(pMap[p].c_str(), process_term(p.getResult()), tac));
+      break;
+    }
+    case 47U:
+    {
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* assoc =
+          mk_expr_const(mk_name_string("or_assoc_eq"), mk_list_nil());
+      lean_object* null =
+          mk_expr_const(mk_name_string("or_true"), mk_list_nil());
+      lean_object* rule =
+          mk_expr_const(mk_name_string("bool_or_dup"), mk_list_nil());
+      lean_object* args = lean_mk_empty_array();
+      const std::vector<Term> pargs = p.getArguments();
+      for (size_t i = 1; i < pargs.size(); ++i)
+      {
+        lean_object* arg = lean_mk_empty_array();
+        for (const Term& t : pargs[i])
+        {
+          arg = lean_array_push(arg, process_term(t));
+        }
+        args = lean_array_push(args, arg);
+      }
+      lean_object* tac = mk_tac_rewrite(assoc, null, rule, args);
+      steps = lean_array_push(
+          steps,
+          mk_step_tac(pMap[p].c_str(), process_term(p.getResult()), tac));
+      break;
+    }
     case 48U:
     {
       pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
@@ -478,7 +716,8 @@ void process_rewrite(Solver& slv,
     }
     default:
     {
-      std::cout << slv.proofToString(p) << std::endl;
+      std::cout << p.getArguments()[0] << ": " << slv.proofToString(p)
+                << std::endl;
       pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
       steps = lean_array_push(
           steps, mk_step_trust(pMap[p].c_str(), process_term(p.getResult())));
@@ -526,49 +765,6 @@ void process_step(Solver& slv,
     case ProofRule::ASSUME:
     {
       pMap[p] = tMap[p.getArguments()[0]];
-      break;
-    }
-    case ProofRule::AND_ELIM:
-    {
-      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
-      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
-      steps = lean_array_push(
-          steps,
-          mk_step_tac(pMap[p].c_str(),
-                      process_term(p.getResult()),
-                      mk_tac_andElim(
-                          mk_name_string(pMap[p.getChildren()[0]].c_str()),
-                          lean_cstr_to_nat(
-                              p.getArguments()[0].getIntegerValue().c_str()))));
-      break;
-    }
-    case ProofRule::AND_INTRO:
-    {
-      const std::vector<Proof> children = p.getChildren();
-      for (const Proof& cp : children)
-      {
-        process_step(slv, cp, tMap, pMap, steps);
-      }
-      size_t c = tMap.size() + pMap.size();
-      std::string currName = pMap[children[0]];
-      Term curr = children[0].getResult();
-      lean_object* thm = mk_expr_const(
-          mk_name_str(mk_name_string("And"), "intro"), mk_list_nil());
-      lean_inc_n(thm, children.size() - 2);
-      for (size_t i = 1; i < children.size(); ++i)
-      {
-        std::string newName = "s" + std::to_string(c) + "s" + std::to_string(i);
-        lean_object* val = mk_expr_app(
-            mk_expr_app(mk_expr_app(mk_expr_app(thm, process_term(curr)),
-                                    process_term(children[i].getResult())),
-                        mk_expr_fvar(mk_name_string(currName.c_str()))),
-            mk_expr_fvar(mk_name_string(pMap[children[i]].c_str())));
-        curr = curr.andTerm(children[i].getResult());
-        steps = lean_array_push(
-            steps, mk_step_thm(newName.c_str(), process_term(curr), val));
-        currName = newName;
-      }
-      pMap[p] = currName;
       break;
     }
     case ProofRule::RESOLUTION:
@@ -777,6 +973,282 @@ void process_step(Solver& slv,
       pMap[p] = currName;
       break;
     }
+    case ProofRule::FACTORING:
+    {
+      // as an argument we pass whether the suffix of the factoring clause is a
+      // singleton *repeated* literal. This is marked by a number as in
+      // resolution.
+      const std::vector<Proof> children = p.getChildren();
+      process_step(slv, children[0], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      Term lastPremiseLit =
+               children[0]
+                   .getResult()[children[0].getResult().getNumChildren() - 1],
+           resOriginal = p.getResult();
+      // For the last premise literal to be a singleton repeated literal, either
+      // it is equal to the result (in which case the premise was just n
+      // occurrences of it), or the end of the original clause is different from
+      // the end of the resulting one. In principle we'd need to add the
+      // singleton information only for OR nodes, so we could avoid this test if
+      // the result is not an OR node. However given the presence of
+      // purification boolean variables which can stand for OR nodes (and could
+      // thus be ambiguous in the final step, with the purification remove), we
+      // do the general test.
+      lean_object* singleton =
+          (lastPremiseLit == resOriginal
+           || (resOriginal.getKind() == Kind::OR
+               && lastPremiseLit
+                      != resOriginal[resOriginal.getNumChildren() - 1]))
+              ? mk_option_some(lean_usize_to_nat(
+                  children[0].getResult().getNumChildren() - 1))
+              : mk_option_none();
+      steps = lean_array_push(
+          steps,
+          mk_step_tac(pMap[p].c_str(),
+                      process_term(p.getResult()),
+                      mk_tac_factor(mk_name_string(pMap[children[0]].c_str()),
+                                    singleton)));
+      break;
+    }
+    case ProofRule::REORDERING:
+    {
+      const std::vector<Proof> children = p.getChildren();
+      process_step(slv, children[0], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      size_t size = p.getResult().getNumChildren();
+      Term lastPremiseLit = children[0].getResult()[size - 1];
+      // -1 if tail of the clause is not an OR (i.e., it cannot be a singleton)
+      lean_object* singleton = lastPremiseLit.getKind() == Kind::OR
+                                   ? mk_option_some(lean_usize_to_nat(size - 1))
+                                   : mk_option_none();
+      // for each literal in the resulting clause, get its position in the
+      // premise
+      lean_object* pos = lean_mk_empty_array();
+      for (const Term& resLit : p.getResult())
+      {
+        for (size_t i = 0; i < size; ++i)
+        {
+          if (children[0].getResult()[i] == resLit)
+          {
+            pos = lean_array_push(pos, lean_usize_to_nat(i));
+          }
+        }
+      }
+      // turn conclusion into clause
+      steps = lean_array_push(
+          steps,
+          mk_step_tac(
+              pMap[p].c_str(),
+              process_term(p.getResult()),
+              mk_tac_reorder(
+                  mk_name_string(pMap[children[0]].c_str()), pos, singleton)));
+      break;
+    }
+    case ProofRule::SPLIT:
+    {
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_const(mk_name_str(mk_name_string("Classical"), "em"),
+                        mk_list_nil()),
+          process_term(p.getArguments()[0]));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case ProofRule::EQ_RESOLVE:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      process_step(slv, p.getChildren()[1], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_app(
+              mk_expr_app(
+                  mk_expr_app(
+                      mk_expr_const(mk_name_string("eqResolve"), mk_list_nil()),
+                      process_term(p.getChildren()[0].getResult())),
+                  process_term(p.getResult())),
+              mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str()))),
+          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[1]].c_str())));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case ProofRule::MODUS_PONENS:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      process_step(slv, p.getChildren()[1], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_app(
+              mk_expr_app(
+                  mk_expr_app(mk_expr_const(mk_name_string("modusPonens"),
+                                            mk_list_nil()),
+                              process_term(p.getChildren()[0].getResult())),
+                  process_term(p.getResult())),
+              mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str()))),
+          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[1]].c_str())));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case ProofRule::NOT_NOT_ELIM:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_app(
+              mk_expr_const(mk_name_string("notNotElim"), mk_list_nil()),
+              process_term(p.getResult())),
+          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str())));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case ProofRule::CONTRA:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      process_step(slv, p.getChildren()[1], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_app(
+              mk_expr_app(
+                  mk_expr_const(mk_name_string("contradiction"), mk_list_nil()),
+                  process_term(p.getResult())),
+              mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str()))),
+          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[1]].c_str())));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case ProofRule::AND_ELIM:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      steps = lean_array_push(
+          steps,
+          mk_step_tac(pMap[p].c_str(),
+                      process_term(p.getResult()),
+                      mk_tac_andElim(
+                          mk_name_string(pMap[p.getChildren()[0]].c_str()),
+                          lean_cstr_to_nat(
+                              p.getArguments()[0].getIntegerValue().c_str()))));
+      break;
+    }
+    case ProofRule::AND_INTRO:
+    {
+      const std::vector<Proof> children = p.getChildren();
+      for (const Proof& cp : children)
+      {
+        process_step(slv, cp, tMap, pMap, steps);
+      }
+      size_t c = tMap.size() + pMap.size();
+      std::string currName = pMap[children[0]];
+      Term curr = children[0].getResult();
+      lean_object* thm = mk_expr_const(
+          mk_name_str(mk_name_string("And"), "intro"), mk_list_nil());
+      lean_inc_n(thm, children.size() - 2);
+      for (size_t i = 1; i < children.size(); ++i)
+      {
+        std::string newName = "s" + std::to_string(c) + "s" + std::to_string(i);
+        lean_object* val = mk_expr_app(
+            mk_expr_app(mk_expr_app(mk_expr_app(thm, process_term(curr)),
+                                    process_term(children[i].getResult())),
+                        mk_expr_fvar(mk_name_string(currName.c_str()))),
+            mk_expr_fvar(mk_name_string(pMap[children[i]].c_str())));
+        curr = curr.andTerm(children[i].getResult());
+        steps = lean_array_push(
+            steps, mk_step_thm(newName.c_str(), process_term(curr), val));
+        currName = newName;
+      }
+      pMap[p] = currName;
+      break;
+    }
+    case ProofRule::NOT_OR_ELIM:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      steps = lean_array_push(
+          steps,
+          mk_step_tac(pMap[p].c_str(),
+                      process_term(p.getResult()),
+                      mk_tac_notOrElim(
+                          mk_name_string(pMap[p.getChildren()[0]].c_str()),
+                          lean_cstr_to_nat(
+                              p.getArguments()[0].getIntegerValue().c_str()))));
+      break;
+    }
+    case ProofRule::IMPLIES_ELIM:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_app(
+              mk_expr_app(
+                  mk_expr_const(mk_name_string("impliesElim"), mk_list_nil()),
+                  process_term(p.getChildren()[0].getResult()[0])),
+              process_term(p.getChildren()[0].getResult()[1])),
+          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str())));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case ProofRule::NOT_IMPLIES_ELIM1:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_app(mk_expr_app(mk_expr_const(mk_name_string("notImplies1"),
+                                                mk_list_nil()),
+                                  process_term(p.getResult())),
+                      process_term(p.getChildren()[0].getResult()[0][1])),
+          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str())));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case ProofRule::NOT_IMPLIES_ELIM2:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_app(mk_expr_app(mk_expr_const(mk_name_string("notImplies2"),
+                                                mk_list_nil()),
+                                  process_term(p.getResult()[0])),
+                      process_term(p.getChildren()[0].getResult()[0][1])),
+          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str())));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case ProofRule::CNF_OR_POS:
+    {
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      const Term cnf = p.getArguments()[0];
+      lean_object* levels = mk_list_cons(mk_level_one(), mk_list_nil());
+      lean_object* le =
+          mk_expr_const(mk_name_str(mk_name_string("List"), "nil"), levels);
+      lean_object* cons =
+          mk_expr_const(mk_name_str(mk_name_string("List"), "cons"), levels);
+      lean_inc_n(cons, cnf.getNumChildren() - 1);
+      for (size_t i = 0, n = cnf.getNumChildren(); i < n; ++i)
+      {
+        le = mk_expr_app(mk_expr_app(cons, process_term(cnf[n - i - 1])), le);
+      }
+      lean_object* val = mk_expr_app(
+          mk_expr_const(mk_name_string("cnfOrPos"), mk_list_nil()), le);
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
     case ProofRule::REFL:
     {
       pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
@@ -842,6 +1314,7 @@ void process_step(Solver& slv,
     {
       const std::vector<Proof> children = p.getChildren();
       lean_object* assums = lean_mk_empty_array();
+      process_term(p.getResult());
       for (const Proof& cp : children)
       {
         process_step(slv, cp, tMap, pMap, steps);
@@ -854,20 +1327,53 @@ void process_step(Solver& slv,
                                           mk_tac_cong(assums)));
       break;
     }
-    case ProofRule::EQ_RESOLVE:
+    case ProofRule::TRUE_INTRO:
     {
       process_step(slv, p.getChildren()[0], tMap, pMap, steps);
-      process_step(slv, p.getChildren()[1], tMap, pMap, steps);
       pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
       lean_object* val = mk_expr_app(
-          mk_expr_app(
-              mk_expr_app(
-                  mk_expr_app(
-                      mk_expr_const(mk_name_string("eqResolve"), mk_list_nil()),
-                      process_term(p.getChildren()[0].getResult())),
-                  process_term(p.getResult())),
-              mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str()))),
-          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[1]].c_str())));
+          mk_expr_app(mk_expr_const(mk_name_string("trueIntro"), mk_list_nil()),
+                      process_term(p.getResult()[0])),
+          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str())));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case ProofRule::TRUE_ELIM:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_app(mk_expr_const(mk_name_string("trueElim"), mk_list_nil()),
+                      process_term(p.getResult())),
+          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str())));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case ProofRule::FALSE_INTRO:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_app(mk_expr_const(mk_name_string("falseIntro"), mk_list_nil()),
+                      process_term(p.getResult()[0])),
+          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str())));
+      steps = lean_array_push(
+          steps,
+          mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
+      break;
+    }
+    case ProofRule::FALSE_ELIM:
+    {
+      process_step(slv, p.getChildren()[0], tMap, pMap, steps);
+      pMap[p] = "s" + std::to_string(tMap.size() + pMap.size());
+      lean_object* val = mk_expr_app(
+          mk_expr_app(mk_expr_const(mk_name_string("falseElim"), mk_list_nil()),
+                      process_term(p.getResult()[0])),
+          mk_expr_fvar(mk_name_string(pMap[p.getChildren()[0]].c_str())));
       steps = lean_array_push(
           steps,
           mk_step_thm(pMap[p].c_str(), process_term(p.getResult()), val));
@@ -909,10 +1415,11 @@ lean_obj_res process(Solver& slv, const cvc5::Proof& p)
   return mk_proof(steps);
 }
 
-extern "C" lean_obj_res solve_and_get_proof(lean_obj_arg query)
+extern "C" lean_obj_res solve(lean_obj_arg query)
 {
   Solver slv;
   slv.setOption("dag-thresh", "0");
+  slv.setOption("produce-models", "true");
   slv.setOption("produce-proofs", "true");
   slv.setOption("proof-granularity", "dsl-rewrite");
   parser::SymbolManager sm(&slv);
@@ -936,5 +1443,20 @@ extern "C" lean_obj_res solve_and_get_proof(lean_obj_arg query)
     cmd.invoke(&slv, &sm, out);
   }
   Result r = slv.checkSat();
-  return process(slv, slv.getProof()[0]);
+  if (r.isSat())
+  {
+    parser.appendIncrementalStringInput("(get-model)\n");
+    cmd = parser.nextCommand();
+    std::stringstream out;
+    cmd.invoke(&slv, &sm, out);
+    return mk_result_sat(lean_mk_string(out.str().c_str()));
+  }
+  else if (r.isUnsat())
+  {
+    return mk_result_unsat(process(slv, slv.getProof()[0]));
+  }
+  else
+  {
+    return mk_result_unknown();
+  }
 }
